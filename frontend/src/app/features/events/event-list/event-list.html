@@ -1,0 +1,154 @@
+<section class="event-list" aria-labelledby="event-list-heading">
+  <header class="event-list__header">
+    <h1 id="event-list-heading">Events</h1>
+    <p class="event-list__lede">Filter and browse persisted events from the API.</p>
+  </header>
+
+  @if (!realtimeConnected()) {
+    <div class="event-list__banner event-list__banner--warn" role="status">
+      Live updates unavailable — changes will appear on next filter interaction.
+    </div>
+  }
+
+  @if (errorMessage(); as err) {
+    <div class="event-list__banner" role="alert">{{ err }}</div>
+  }
+
+  <div class="event-list__filters" role="search" aria-label="Event filters">
+    <div class="field">
+      <label for="filter-userId">User ID (partial)</label>
+      <input
+        id="filter-userId"
+        type="search"
+        autocomplete="off"
+        [value]="userIdInput()"
+        (input)="onUserIdInput($any($event.target).value)"
+        placeholder="Contains…"
+      />
+    </div>
+    <div class="field">
+      <label for="filter-type">Type</label>
+      <select
+        id="filter-type"
+        [value]="typeFilter()"
+        (change)="onTypeChange($any($event.target).value)"
+      >
+        <option value="">Any</option>
+        @for (t of eventTypes; track t) {
+          <option [value]="t">{{ t }}</option>
+        }
+      </select>
+    </div>
+    <div class="field">
+      <label for="filter-from">From (local)</label>
+      <input
+        id="filter-from"
+        type="datetime-local"
+        [value]="fromDate()"
+        (change)="onFromDateChange($any($event.target).value)"
+      />
+    </div>
+    <div class="field">
+      <label for="filter-to">To (local)</label>
+      <input
+        id="filter-to"
+        type="datetime-local"
+        [value]="toDate()"
+        (change)="onToDateChange($any($event.target).value)"
+      />
+    </div>
+    <div class="field">
+      <label for="filter-sort">Sort by</label>
+      <select
+        id="filter-sort"
+        [value]="sortBy()"
+        (change)="onSortByChange($any($event.target).value)"
+      >
+        <option value="CreatedAt">Created at</option>
+        <option value="UserId">User ID</option>
+        <option value="Type">Type</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="filter-order">Order</label>
+      <select
+        id="filter-order"
+        [value]="sortDescending() ? 'desc' : 'asc'"
+        (change)="onSortDirChange($any($event.target).value)"
+      >
+        <option value="desc">Newest first</option>
+        <option value="asc">Oldest first</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="filter-page-size">Page size</label>
+      <select
+        id="filter-page-size"
+        [value]="pageSize() + ''"
+        (change)="onPageSizeChange($any($event.target).value)"
+      >
+        <option value="10">10</option>
+        <option value="20">20</option>
+        <option value="50">50</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="event-list__table-wrap">
+    <table class="event-table">
+      <caption class="sr-only">
+        Event history; columns are time, user, type, and description.
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">Created (UTC display local)</th>
+          <th scope="col">User ID</th>
+          <th scope="col">Type</th>
+          <th scope="col">Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        @if (loading()) {
+          @for (_ of skeletonRows; track _) {
+            <tr class="event-table__skeleton-row" aria-hidden="true">
+              <td><span class="sk sk--wide"></span></td>
+              <td><span class="sk sk--med"></span></td>
+              <td><span class="sk sk--narrow"></span></td>
+              <td><span class="sk sk--wide"></span></td>
+            </tr>
+          }
+        } @else if (showEmpty()) {
+          <tr>
+            <td colspan="4">
+              <div class="empty-state" role="status" aria-live="polite">
+                <p class="empty-state__title">No events match these filters</p>
+                <p class="empty-state__hint">Try widening the date range or clearing the user filter.</p>
+              </div>
+            </td>
+          </tr>
+        } @else {
+          @for (row of result()?.items ?? []; track row.id) {
+            <tr>
+              <td>{{ formatTime(row.createdAt) }}</td>
+              <td>{{ row.userId }}</td>
+              <td>{{ row.type }}</td>
+              <td class="event-table__desc">{{ row.description }}</td>
+            </tr>
+          }
+        }
+      </tbody>
+    </table>
+  </div>
+
+  @if (!loading() && result(); as r) {
+    <nav class="event-list__pager" aria-label="Pagination">
+      <span class="pager-meta">
+        Page {{ r.page }} of {{ r.totalPages || 1 }} · {{ r.totalCount }} total
+      </span>
+      <div class="pager-actions">
+        <button type="button" (click)="prevPage()" [disabled]="r.page <= 1">Previous</button>
+        <button type="button" (click)="nextPage()" [disabled]="r.page >= r.totalPages">Next</button>
+      </div>
+    </nav>
+  }
+</section>

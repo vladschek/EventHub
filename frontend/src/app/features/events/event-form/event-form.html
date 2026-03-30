@@ -1,0 +1,93 @@
+<section class="event-form" aria-labelledby="event-form-heading">
+  <header class="event-form__header">
+    <h1 id="event-form-heading">New event</h1>
+    <p class="event-form__lede">Submit a test event to the pipeline (same contract as POST /api/events).</p>
+  </header>
+
+  @if (submitError(); as err) {
+    <div class="event-form__banner event-form__banner--error" role="alert">{{ err }}</div>
+  }
+
+  @if (submitSuccess()) {
+    <div class="event-form__banner event-form__banner--success" role="status" aria-live="polite">
+      Event created successfully. You can submit another.
+    </div>
+  }
+
+  <form
+    [formGroup]="form"
+    (ngSubmit)="onSubmit()"
+    class="event-form__form"
+    [attr.aria-busy]="submitting()"
+  >
+    <div class="field">
+      <label for="ev-userId">User ID</label>
+      <input
+        id="ev-userId"
+        type="text"
+        formControlName="userId"
+        autocomplete="username"
+        [attr.aria-invalid]="form.controls.userId.invalid && form.controls.userId.touched"
+        [attr.aria-describedby]="
+          form.controls.userId.invalid && form.controls.userId.touched ? 'ev-userId-err' : null
+        "
+        [attr.maxlength]="userIdMax"
+      />
+      @if (controlError('userId'); as msg) {
+        <p id="ev-userId-err" class="field-error" role="alert">{{ msg }}</p>
+      }
+    </div>
+
+    <div class="field">
+      <label for="ev-type">Event type</label>
+      <select
+        id="ev-type"
+        formControlName="type"
+        [attr.aria-invalid]="form.controls.type.invalid && form.controls.type.touched"
+        [attr.aria-describedby]="
+          form.controls.type.invalid && form.controls.type.touched ? 'ev-type-err' : null
+        "
+      >
+        @for (t of eventTypes; track t) {
+          <option [value]="t">{{ t }}</option>
+        }
+      </select>
+      @if (controlError('type'); as msg) {
+        <p id="ev-type-err" class="field-error" role="alert">{{ msg }}</p>
+      }
+    </div>
+
+    <div class="field">
+      <label for="ev-description">Description</label>
+      <textarea
+        id="ev-description"
+        formControlName="description"
+        rows="4"
+        [attr.aria-invalid]="form.controls.description.invalid && form.controls.description.touched"
+        [attr.aria-describedby]="
+          controlError('description') ? 'ev-desc-hint ev-desc-err' : 'ev-desc-hint'
+        "
+        [attr.maxlength]="descMax"
+      ></textarea>
+      <p id="ev-desc-hint" class="char-hint" aria-live="polite">
+        {{ descriptionLength() }} / {{ descMax }}
+        @if (descRemaining() >= 0) {
+          <span class="char-hint__remaining">({{ descRemaining() }} remaining)</span>
+        }
+      </p>
+      @if (controlError('description'); as msg) {
+        <p id="ev-desc-err" class="field-error" role="alert">{{ msg }}</p>
+      }
+    </div>
+
+    <div class="event-form__actions">
+      <button type="submit" [disabled]="submitting()">
+        @if (submitting()) {
+          <span>Sending…</span>
+        } @else {
+          <span>Submit event</span>
+        }
+      </button>
+    </div>
+  </form>
+</section>

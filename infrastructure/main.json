@@ -1,0 +1,873 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "languageVersion": "2.0",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.41.2.15936",
+      "templateHash": "16717398666574452806"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region (defaults to resource group location)."
+      }
+    },
+    "sqlAdministratorPassword": {
+      "type": "securestring",
+      "minLength": 8,
+      "metadata": {
+        "description": "Password for the SQL server administrator login (meet Azure SQL password policy)."
+      }
+    },
+    "sqlAdministratorLogin": {
+      "type": "string",
+      "defaultValue": "sqladmin",
+      "metadata": {
+        "description": "SQL administrator login name."
+      }
+    },
+    "sqlDatabaseName": {
+      "type": "string",
+      "defaultValue": "EventHub",
+      "metadata": {
+        "description": "Application database name."
+      }
+    },
+    "sqlServerName": {
+      "type": "string",
+      "defaultValue": "[format('sql-eh-{0}', uniqueString(resourceGroup().id))]",
+      "metadata": {
+        "description": "Globally unique SQL server name."
+      }
+    },
+    "serviceBusNamespaceName": {
+      "type": "string",
+      "defaultValue": "[format('sb-eh-{0}', uniqueString(resourceGroup().id))]",
+      "metadata": {
+        "description": "Globally unique Service Bus namespace (3–50 chars, alphanumeric-hyphen)."
+      }
+    },
+    "storageAccountName": {
+      "type": "string",
+      "defaultValue": "[take(format('ehstore{0}', uniqueString(resourceGroup().id)), 24)]",
+      "metadata": {
+        "description": "Globally unique storage account name (3–24, lowercase letters and numbers only)."
+      }
+    }
+  },
+  "variables": {
+    "resourceToken": "[uniqueString(resourceGroup().id)]",
+    "apiWebAppName": "[format('app-eh-{0}', variables('resourceToken'))]",
+    "functionAppName": "[format('func-eh-{0}', variables('resourceToken'))]",
+    "contentShareName": "[take(replace(toLower(format('{0}cnt', variables('functionAppName'))), '-', ''), 63)]"
+  },
+  "resources": {
+    "monitoring": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "monitoring",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "baseName": {
+            "value": "[variables('resourceToken')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "6972551935293075709"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region."
+              }
+            },
+            "baseName": {
+              "type": "string",
+              "metadata": {
+                "description": "Short name token for workspace and Application Insights resources (must be unique within RG)."
+              }
+            }
+          },
+          "resources": {
+            "logAnalyticsWorkspace": {
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2022-10-01",
+              "name": "[format('law-{0}', parameters('baseName'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "name": "PerGB2018"
+                },
+                "retentionInDays": 30
+              }
+            },
+            "appInsights": {
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[format('ai-{0}', parameters('baseName'))]",
+              "location": "[parameters('location')]",
+              "kind": "web",
+              "properties": {
+                "Application_Type": "web",
+                "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', format('law-{0}', parameters('baseName')))]",
+                "IngestionMode": "LogAnalytics"
+              },
+              "dependsOn": [
+                "logAnalyticsWorkspace"
+              ]
+            }
+          },
+          "outputs": {
+            "workspaceId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.OperationalInsights/workspaces', format('law-{0}', parameters('baseName')))]"
+            },
+            "appInsightsId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Insights/components', format('ai-{0}', parameters('baseName')))]"
+            },
+            "appInsightsConnectionString": {
+              "type": "securestring",
+              "value": "[reference('appInsights').ConnectionString]"
+            }
+          }
+        }
+      }
+    },
+    "serviceBus": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "serviceBus",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "namespaceName": {
+            "value": "[parameters('serviceBusNamespaceName')]"
+          },
+          "queueName": {
+            "value": "events"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "247362153105581336"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the namespace."
+              }
+            },
+            "namespaceName": {
+              "type": "string",
+              "metadata": {
+                "description": "Globally unique Service Bus namespace name (3–50 chars, alphanumeric-hyphen)."
+              }
+            },
+            "queueName": {
+              "type": "string",
+              "defaultValue": "events",
+              "metadata": {
+                "description": "Queue name for new events — must stay `events` per product architecture."
+              }
+            }
+          },
+          "resources": {
+            "serviceBusNamespace": {
+              "type": "Microsoft.ServiceBus/namespaces",
+              "apiVersion": "2022-10-01-preview",
+              "name": "[parameters('namespaceName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Standard"
+              },
+              "properties": {
+                "minimumTlsVersion": "1.2"
+              }
+            },
+            "eventsQueue": {
+              "type": "Microsoft.ServiceBus/namespaces/queues",
+              "apiVersion": "2022-10-01-preview",
+              "name": "[format('{0}/{1}', parameters('namespaceName'), parameters('queueName'))]",
+              "properties": {
+                "maxDeliveryCount": 10
+              },
+              "dependsOn": [
+                "serviceBusNamespace"
+              ]
+            },
+            "rootAuthRule": {
+              "existing": true,
+              "type": "Microsoft.ServiceBus/namespaces/AuthorizationRules",
+              "apiVersion": "2022-10-01-preview",
+              "name": "[format('{0}/{1}', parameters('namespaceName'), 'RootManageSharedAccessKey')]",
+              "dependsOn": [
+                "serviceBusNamespace"
+              ]
+            }
+          },
+          "outputs": {
+            "namespaceId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.ServiceBus/namespaces', parameters('namespaceName'))]"
+            },
+            "namespaceNameOut": {
+              "type": "string",
+              "value": "[parameters('namespaceName')]"
+            },
+            "queueNameOut": {
+              "type": "string",
+              "value": "[parameters('queueName')]"
+            },
+            "connectionString": {
+              "type": "securestring",
+              "value": "[listKeys('rootAuthRule', '2022-10-01-preview').primaryConnectionString]"
+            }
+          }
+        }
+      }
+    },
+    "sql": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "sql",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "serverName": {
+            "value": "[parameters('sqlServerName')]"
+          },
+          "databaseName": {
+            "value": "[parameters('sqlDatabaseName')]"
+          },
+          "administratorLogin": {
+            "value": "[parameters('sqlAdministratorLogin')]"
+          },
+          "administratorPassword": {
+            "value": "[parameters('sqlAdministratorPassword')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "2885064011291955818"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region."
+              }
+            },
+            "serverName": {
+              "type": "string",
+              "metadata": {
+                "description": "Globally unique SQL server name (lowercase letters, numbers, hyphens)."
+              }
+            },
+            "databaseName": {
+              "type": "string",
+              "defaultValue": "EventHub",
+              "metadata": {
+                "description": "Database name."
+              }
+            },
+            "administratorLogin": {
+              "type": "string",
+              "defaultValue": "sqladmin",
+              "metadata": {
+                "description": "SQL administrator login."
+              }
+            },
+            "administratorPassword": {
+              "type": "securestring",
+              "metadata": {
+                "description": "SQL administrator password (complex password required by Azure)."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Sql/servers",
+              "apiVersion": "2023-08-01-preview",
+              "name": "[parameters('serverName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "administratorLogin": "[parameters('administratorLogin')]",
+                "administratorLoginPassword": "[parameters('administratorPassword')]",
+                "version": "12.0",
+                "minimalTlsVersion": "1.2",
+                "publicNetworkAccess": "Enabled"
+              }
+            },
+            {
+              "type": "Microsoft.Sql/servers/firewallRules",
+              "apiVersion": "2023-08-01-preview",
+              "name": "[format('{0}/{1}', parameters('serverName'), 'AllowAllWindowsAzureIps')]",
+              "properties": {
+                "startIpAddress": "0.0.0.0",
+                "endIpAddress": "0.0.0.0"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Sql/servers', parameters('serverName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Sql/servers/databases",
+              "apiVersion": "2023-08-01-preview",
+              "name": "[format('{0}/{1}', parameters('serverName'), parameters('databaseName'))]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Basic",
+                "tier": "Basic"
+              },
+              "properties": {
+                "collation": "SQL_Latin1_General_CP1_CI_AS"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Sql/servers', parameters('serverName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "serverId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Sql/servers', parameters('serverName'))]"
+            },
+            "serverFqdn": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Sql/servers', parameters('serverName')), '2023-08-01-preview').fullyQualifiedDomainName]"
+            },
+            "databaseNameOut": {
+              "type": "string",
+              "value": "[parameters('databaseName')]"
+            }
+          }
+        }
+      }
+    },
+    "storage": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "storage",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "storageAccountName": {
+            "value": "[parameters('storageAccountName')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "10672289979995740994"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region."
+              }
+            },
+            "storageAccountName": {
+              "type": "string",
+              "metadata": {
+                "description": "Globally unique storage account name (3–24 lowercase letters and numbers only)."
+              }
+            }
+          },
+          "resources": {
+            "storage": {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2023-05-01",
+              "name": "[parameters('storageAccountName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Standard_LRS"
+              },
+              "kind": "StorageV2",
+              "properties": {
+                "supportsHttpsTrafficOnly": true,
+                "minimumTlsVersion": "TLS1_2"
+              }
+            }
+          },
+          "outputs": {
+            "storageAccountId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+            },
+            "storageAccountNameOut": {
+              "type": "string",
+              "value": "[parameters('storageAccountName')]"
+            },
+            "connectionString": {
+              "type": "securestring",
+              "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', parameters('storageAccountName'), listKeys('storage', '2023-05-01').keys[0].value, environment().suffixes.storage)]"
+            }
+          }
+        }
+      }
+    },
+    "api": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "api",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "planName": {
+            "value": "[format('plan-api-{0}', variables('resourceToken'))]"
+          },
+          "appName": {
+            "value": "[variables('apiWebAppName')]"
+          },
+          "sqlServerFqdn": {
+            "value": "[reference('sql').outputs.serverFqdn.value]"
+          },
+          "sqlDatabaseName": {
+            "value": "[reference('sql').outputs.databaseNameOut.value]"
+          },
+          "sqlUser": {
+            "value": "[parameters('sqlAdministratorLogin')]"
+          },
+          "sqlPassword": {
+            "value": "[parameters('sqlAdministratorPassword')]"
+          },
+          "serviceBusConnectionString": {
+            "value": "[listOutputsWithSecureValues('serviceBus', '2025-04-01').connectionString]"
+          },
+          "applicationInsightsConnectionString": {
+            "value": "[listOutputsWithSecureValues('monitoring', '2025-04-01').appInsightsConnectionString]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "16736306336258555896"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region."
+              }
+            },
+            "planName": {
+              "type": "string",
+              "metadata": {
+                "description": "App Service plan name (unique within the resource group)."
+              }
+            },
+            "appName": {
+              "type": "string",
+              "metadata": {
+                "description": "Web app name (globally unique under *.azurewebsites.net)."
+              }
+            },
+            "sqlServerFqdn": {
+              "type": "string",
+              "metadata": {
+                "description": "SQL server FQDN (no tcp/ prefix)."
+              }
+            },
+            "sqlDatabaseName": {
+              "type": "string",
+              "metadata": {
+                "description": "Database name on the server."
+              }
+            },
+            "sqlUser": {
+              "type": "string",
+              "metadata": {
+                "description": "SQL login user id."
+              }
+            },
+            "sqlPassword": {
+              "type": "securestring",
+              "metadata": {
+                "description": "SQL login password."
+              }
+            },
+            "serviceBusConnectionString": {
+              "type": "securestring"
+            },
+            "applicationInsightsConnectionString": {
+              "type": "securestring"
+            }
+          },
+          "variables": {
+            "sqlConnectionString": "[format('Server=tcp:{0},1433;Initial Catalog={1};Persist Security Info=False;User ID={2};Password={3};MultipleActiveResultSets=True;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;', parameters('sqlServerFqdn'), parameters('sqlDatabaseName'), parameters('sqlUser'), parameters('sqlPassword'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Web/serverfarms",
+              "apiVersion": "2023-01-01",
+              "name": "[parameters('planName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "B1",
+                "tier": "Basic"
+              },
+              "properties": {
+                "reserved": true
+              }
+            },
+            {
+              "type": "Microsoft.Web/sites",
+              "apiVersion": "2023-01-01",
+              "name": "[parameters('appName')]",
+              "location": "[parameters('location')]",
+              "kind": "app,linux",
+              "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]",
+                "httpsOnly": true,
+                "siteConfig": {
+                  "linuxFxVersion": "DOTNETCORE|10.0",
+                  "appSettings": [
+                    {
+                      "name": "ASPNETCORE_ENVIRONMENT",
+                      "value": "Production"
+                    },
+                    {
+                      "name": "ConnectionStrings__DefaultConnection",
+                      "value": "[variables('sqlConnectionString')]"
+                    },
+                    {
+                      "name": "ServiceBus__ConnectionString",
+                      "value": "[parameters('serviceBusConnectionString')]"
+                    },
+                    {
+                      "name": "ServiceBus__DisablePublishing",
+                      "value": "false"
+                    },
+                    {
+                      "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                      "value": "[parameters('applicationInsightsConnectionString')]"
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "apiUrl": {
+              "type": "string",
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', parameters('appName')), '2023-01-01').defaultHostName)]"
+            },
+            "webAppName": {
+              "type": "string",
+              "value": "[parameters('appName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "monitoring",
+        "serviceBus",
+        "sql"
+      ]
+    },
+    "functions": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "functions",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "planName": {
+            "value": "[format('plan-func-{0}', variables('resourceToken'))]"
+          },
+          "functionAppName": {
+            "value": "[variables('functionAppName')]"
+          },
+          "contentShareName": {
+            "value": "[variables('contentShareName')]"
+          },
+          "storageConnectionString": {
+            "value": "[listOutputsWithSecureValues('storage', '2025-04-01').connectionString]"
+          },
+          "sqlServerFqdn": {
+            "value": "[reference('sql').outputs.serverFqdn.value]"
+          },
+          "sqlDatabaseName": {
+            "value": "[reference('sql').outputs.databaseNameOut.value]"
+          },
+          "sqlUser": {
+            "value": "[parameters('sqlAdministratorLogin')]"
+          },
+          "sqlPassword": {
+            "value": "[parameters('sqlAdministratorPassword')]"
+          },
+          "serviceBusConnectionString": {
+            "value": "[listOutputsWithSecureValues('serviceBus', '2025-04-01').connectionString]"
+          },
+          "applicationInsightsConnectionString": {
+            "value": "[listOutputsWithSecureValues('monitoring', '2025-04-01').appInsightsConnectionString]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "6571102481272102676"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region."
+              }
+            },
+            "planName": {
+              "type": "string",
+              "metadata": {
+                "description": "Consumption plan name (unique within the resource group)."
+              }
+            },
+            "functionAppName": {
+              "type": "string",
+              "metadata": {
+                "description": "Function app name (globally unique under *.azurewebsites.net)."
+              }
+            },
+            "contentShareName": {
+              "type": "string",
+              "metadata": {
+                "description": "WEBSITE_CONTENTSHARE — lowercase letters and numbers, max 63."
+              }
+            },
+            "storageConnectionString": {
+              "type": "securestring"
+            },
+            "sqlServerFqdn": {
+              "type": "string",
+              "metadata": {
+                "description": "SQL server FQDN."
+              }
+            },
+            "sqlDatabaseName": {
+              "type": "string",
+              "metadata": {
+                "description": "Database name."
+              }
+            },
+            "sqlUser": {
+              "type": "string"
+            },
+            "sqlPassword": {
+              "type": "securestring"
+            },
+            "serviceBusConnectionString": {
+              "type": "securestring"
+            },
+            "applicationInsightsConnectionString": {
+              "type": "securestring"
+            }
+          },
+          "variables": {
+            "sqlConnectionString": "[format('Server=tcp:{0},1433;Initial Catalog={1};Persist Security Info=False;User ID={2};Password={3};MultipleActiveResultSets=True;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;', parameters('sqlServerFqdn'), parameters('sqlDatabaseName'), parameters('sqlUser'), parameters('sqlPassword'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Web/serverfarms",
+              "apiVersion": "2023-01-01",
+              "name": "[parameters('planName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Y1",
+                "tier": "Dynamic"
+              },
+              "properties": {
+                "reserved": true
+              }
+            },
+            {
+              "type": "Microsoft.Web/sites",
+              "apiVersion": "2023-01-01",
+              "name": "[parameters('functionAppName')]",
+              "location": "[parameters('location')]",
+              "kind": "functionapp,linux",
+              "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]",
+                "httpsOnly": true,
+                "siteConfig": {
+                  "linuxFxVersion": "DOTNET-ISOLATED|10.0",
+                  "appSettings": [
+                    {
+                      "name": "AzureWebJobsStorage",
+                      "value": "[parameters('storageConnectionString')]"
+                    },
+                    {
+                      "name": "WEBSITE_CONTENTAZUREFILECONNECTION",
+                      "value": "[parameters('storageConnectionString')]"
+                    },
+                    {
+                      "name": "WEBSITE_CONTENTSHARE",
+                      "value": "[toLower(take(parameters('contentShareName'), 63))]"
+                    },
+                    {
+                      "name": "FUNCTIONS_EXTENSION_VERSION",
+                      "value": "~4"
+                    },
+                    {
+                      "name": "FUNCTIONS_WORKER_RUNTIME",
+                      "value": "dotnet-isolated"
+                    },
+                    {
+                      "name": "ConnectionStrings__DefaultConnection",
+                      "value": "[variables('sqlConnectionString')]"
+                    },
+                    {
+                      "name": "ServiceBus__ConnectionString",
+                      "value": "[parameters('serviceBusConnectionString')]"
+                    },
+                    {
+                      "name": "ServiceBusConnection",
+                      "value": "[parameters('serviceBusConnectionString')]"
+                    },
+                    {
+                      "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                      "value": "[parameters('applicationInsightsConnectionString')]"
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "functionAppUrl": {
+              "type": "string",
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2023-01-01').defaultHostName)]"
+            },
+            "functionAppNameOut": {
+              "type": "string",
+              "value": "[parameters('functionAppName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "monitoring",
+        "serviceBus",
+        "sql",
+        "storage"
+      ]
+    }
+  },
+  "outputs": {
+    "apiBaseUrl": {
+      "type": "string",
+      "value": "[reference('api').outputs.apiUrl.value]"
+    },
+    "functionAppBaseUrl": {
+      "type": "string",
+      "value": "[reference('functions').outputs.functionAppUrl.value]"
+    },
+    "sqlServerFqdn": {
+      "type": "string",
+      "value": "[reference('sql').outputs.serverFqdn.value]"
+    },
+    "sqlDatabaseName": {
+      "type": "string",
+      "value": "[reference('sql').outputs.databaseNameOut.value]"
+    },
+    "serviceBusNamespace": {
+      "type": "string",
+      "value": "[reference('serviceBus').outputs.namespaceNameOut.value]"
+    },
+    "applicationInsightsName": {
+      "type": "string",
+      "value": "[format('ai-{0}', variables('resourceToken'))]"
+    },
+    "postDeployHint": {
+      "type": "string",
+      "value": "Run EF migrations against sqlServerFqdn; configure SPA apiUrl to apiBaseUrl (HTTPS)."
+    }
+  }
+}
